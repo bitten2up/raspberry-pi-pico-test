@@ -282,7 +282,163 @@ void tud_cdc_rx_cb(uint8_t itf)
 {
   (void) itf;
 }
+//--------------------------------------------------------------------+
+// MIDI Task
+//--------------------------------------------------------------------+
 
+// Variable that holds the current position in the sequence.
+uint32_t note_pos = 0;
+
+// Store example melody as an array of note values
+uint8_t note_sequence[] =
+{
+  74,78,81,86,90,93,98,102,57,61,66,69,73,78,81,85,88,92,97,100,97,92,88,85,81,78,
+  74,69,66,62,57,62,66,69,74,78,81,86,90,93,97,102,97,93,90,85,81,78,73,68,64,61,
+  56,61,64,68,74,78,81,86,90,93,98,102
+};
+
+void midi_task(void)
+{
+  static uint32_t start_ms = 0;
+
+  uint8_t const cable_num = 0; // MIDI jack associated with USB endpoint
+  uint8_t const channel   = 0; // 0 for channel 1
+
+  // The MIDI interface always creates input and output port/jack descriptors
+  // regardless of these being used or not. Therefore incoming traffic should be read
+  // (possibly just discarded) to avoid the sender blocking in IO
+  uint8_t packet[4];
+  while ( tud_midi_available() ) tud_midi_packet_read(packet);
+
+  // send note periodically
+  if (board_millis() - start_ms < 286) return; // not enough time
+  start_ms += 286;
+
+  // Previous positions in the note sequence.
+  int previous = note_pos - 1;
+
+  // If we currently are at position 0, set the
+  // previous position to the last note in the sequence.
+  if (previous < 0) previous = sizeof(note_sequence) - 1;
+
+  // Send Note On for current position at full velocity (127) on channel 1.
+  uint8_t note_on[3] = { 0x90 | channel, note_sequence[note_pos], 127 };
+  tud_midi_stream_write(cable_num, note_on, 3);
+
+  // Send Note Off for previous note.
+  uint8_t note_off[3] = { 0x80 | channel, note_sequence[previous], 0};
+  tud_midi_stream_write(cable_num, note_off, 3);
+
+  // Increment position
+  note_pos++;
+
+  // If we are at the end of the sequence, start over.
+  if (note_pos >= sizeof(note_sequence)) note_pos = 0;
+}
+//--------------------------------------------------------------------+
+// USB Video
+//--------------------------------------------------------------------+
+static unsigned frame_num = 0;
+static unsigned tx_busy = 0;
+static unsigned interval_ms = 1000 / FRAME_RATE;
+
+/* YUY2 frame buffer */
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+#include "images.h"
+#else
+static uint8_t frame_buffer[FRAME_WIDTH * FRAME_HEIGHT * 16 / 8];
+static void fill_color_bar(uint8_t *buffer, unsigned start_position)
+{
+  /* EBU color bars
+   * See also https://stackoverflow.com/questions/6939422 */
+  static uint8_t const bar_color[8][4] = {
+    /*  Y,   U,   Y,   V */
+    { 235, 128, 235, 128}, /* 100% White */
+    { 219,  16, 219, 138}, /* Yellow */
+    { 188, 154, 188,  16}, /* Cyan */
+    { 173,  42, 173,  26}, /* Green */
+    {  78, 214,  78, 230}, /* Magenta */
+    {  63, 102,  63, 240}, /* Red */
+    {  32, 240,  32, 118}, /* Blue */
+    {  16, 128,  16, 128}, /* Black */
+  };
+  uint8_t *p;
+
+  /* Generate the 1st line */
+  uint8_t *end = &buffer[FRAME_WIDTH * 2];
+  unsigned idx = (FRAME_WIDTH / 2 - 1) - (start_position % (FRAME_WIDTH / 2));
+  p = &buffer[idx * 4];
+  for (unsigned i = 0; i < 8; ++i) {
+    for (int j = 0; j < FRAME_WIDTH / (2 * 8); ++j) {
+      memcpy(p, &bar_color[i], 4);
+      p += 4;
+      if (end <= p) {
+        p = buffer;
+      }
+    }
+  }
+  /* Duplicate the 1st line to the others */
+  p = &buffer[FRAME_WIDTH * 2];
+  for (unsigned i = 1; i < FRAME_HEIGHT; ++i) {
+    memcpy(p, buffer, FRAME_WIDTH * 2);
+    p += FRAME_WIDTH * 2;
+  }
+}
+#endif
+
+void video_task(void)
+{
+  static unsigned start_ms = 0;
+  static unsigned already_sent = 0;
+
+  if (!tud_video_n_streaming(0, 0)) {
+    already_sent  = 0;
+    frame_num     = 0;
+    return;
+  }
+
+  if (!already_sent) {
+    already_sent = 1;
+    start_ms = board_millis();
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+    tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                           FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#else
+    fill_color_bar(frame_buffer, frame_num);
+    tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#endif
+  }
+
+  unsigned cur = board_millis();
+  if (cur - start_ms < interval_ms) return; // not enough time
+  if (tx_busy) return;
+  start_ms += interval_ms;
+
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+  tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                         FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#else
+  fill_color_bar(frame_buffer, frame_num);
+  tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#endif
+}
+
+void tud_video_frame_xfer_complete_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx)
+{
+  (void)ctl_idx; (void)stm_idx;
+  tx_busy = 0;
+  /* flip buffer */
+  ++frame_num;
+}
+
+int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
+			video_probe_and_commit_control_t const *parameters)
+{
+  (void)ctl_idx; (void)stm_idx;
+  /* convert unit to ms from 100 ns */
+  interval_ms = parameters->dwFrameInterval / 10000;
+  return VIDEO_ERROR_NONE;
+}
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
