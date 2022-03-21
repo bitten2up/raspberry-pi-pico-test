@@ -22,14 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
  */
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "bsp/board.h"
 #include "tusb.h"
-
 #include "usb_descriptors.h"
 
 //--------------------------------------------------------------------+
@@ -43,30 +41,70 @@ SOFTWARE.
  */
 enum  {
   BLINK_NOT_MOUNTED = 250,
-  BLINK_MOUNTED = 1000,
-  BLINK_SUSPENDED = 2500,
+  BLINK_MOUNTED     = 1000,
+  BLINK_SUSPENDED   = 2500,
+
+  BLINK_ALWAYS_ON   = UINT32_MAX,
+  BLINK_ALWAYS_OFF  = 0
 };
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
+#define URL  "example.tinyusb.org/webusb-serial/"
+
+const tusb_desc_webusb_url_t desc_url =
+{
+  .bLength         = 3 + sizeof(URL) - 1,
+  .bDescriptorType = 3, // WEBUSB URL type
+  .bScheme         = 1, // 0: http, 1: https
+  .url             = URL
+};
+
+static bool web_serial_connected = false;
+
+//------------- prototypes -------------//
 void led_blinking_task(void);
-void hid_task(void);
+void cdc_task(void);
+void webserial_task(void);
 
 /*------------- MAIN -------------*/
 int main(void)
 {
   board_init();
+
   tusb_init();
 
   while (1)
   {
     tud_task(); // tinyusb device task
+    cdc_task();
+    webserial_task();
     led_blinking_task();
-
-    hid_task();
   }
 
   return 0;
+}
+
+// send characters to both CDC and WebUSB
+void echo_all(uint8_t buf[], uint32_t count)
+{
+  // echo to web serial
+  if ( web_serial_connected )
+  {
+    tud_vendor_write(buf, count);
+  }
+
+  // echo to cdc
+  if ( tud_cdc_connected() )
+  {
+    for(uint32_t i=0; i<count; i++)
+    {
+      tud_cdc_write_char(buf[i]);
+
+      if ( buf[i] == '\r' ) tud_cdc_write_char('\n');
+    }
+    tud_cdc_write_flush();
+  }
 }
 
 //--------------------------------------------------------------------+
@@ -101,185 +139,127 @@ void tud_resume_cb(void)
 }
 
 //--------------------------------------------------------------------+
-// USB HID
+// WebUSB use vendor class
 //--------------------------------------------------------------------+
 
-static void send_hid_report(uint8_t report_id, uint32_t btn)
+// Invoked when a control transfer occurred on an interface of this class
+// Driver response accordingly to the request and the transfer stage (setup/data/ack)
+// return false to stall control endpoint (e.g unsupported request)
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request)
 {
-  // skip if hid is not ready yet
-  if ( !tud_hid_ready() ) return;
+  // nothing to with DATA & ACK stage
+  if (stage != CONTROL_STAGE_SETUP) return true;
 
-  switch(report_id)
+  switch (request->bmRequestType_bit.type)
   {
-    case REPORT_ID_KEYBOARD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_keyboard_key = false;
-
-      if ( btn )
+    case TUSB_REQ_TYPE_VENDOR:
+      switch (request->bRequest)
       {
-        uint8_t keycode[6] = { 0 };
-        keycode[0] = HID_KEY_A;
+        case VENDOR_REQUEST_WEBUSB:
+          // match vendor request in BOS descriptor
+          // Get landing page url
+          return tud_control_xfer(rhport, request, (void*)(uintptr_t) &desc_url, desc_url.bLength);
 
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
-        has_keyboard_key = true;
-      }else
-      {
-        // send empty key report if previously has key pressed
-        if (has_keyboard_key) tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-        has_keyboard_key = false;
+        case VENDOR_REQUEST_MICROSOFT:
+          if ( request->wIndex == 7 )
+          {
+            // Get Microsoft OS 2.0 compatible descriptor
+            uint16_t total_len;
+            memcpy(&total_len, desc_ms_os_20+8, 2);
+
+            return tud_control_xfer(rhport, request, (void*)(uintptr_t) desc_ms_os_20, total_len);
+          }else
+          {
+            return false;
+          }
+
+        default: break;
       }
-    }
     break;
 
-    case REPORT_ID_MOUSE:
-    {
-      int8_t const delta = 5;
-
-      // no button, right + down, no scroll, no pan
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
-    }
-    break;
-
-    case REPORT_ID_CONSUMER_CONTROL:
-    {
-      // use to avoid send multiple consecutive zero report
-      static bool has_consumer_key = false;
-
-      if ( btn )
+    case TUSB_REQ_TYPE_CLASS:
+      if (request->bRequest == 0x22)
       {
-        // volume down
-        uint16_t volume_down = HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-        tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &volume_down, 2);
-        has_consumer_key = true;
-      }else
-      {
-        // send empty key report (release key) if previously has key pressed
-        uint16_t empty_key = 0;
-        if (has_consumer_key) tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &empty_key, 2);
-        has_consumer_key = false;
+        // Webserial simulate the CDC_REQUEST_SET_CONTROL_LINE_STATE (0x22) to connect and disconnect.
+        web_serial_connected = (request->wValue != 0);
+
+        // Always lit LED if connected
+        if ( web_serial_connected )
+        {
+          board_led_write(true);
+          blink_interval_ms = BLINK_ALWAYS_ON;
+
+          tud_vendor_write_str("\r\nTinyUSB WebUSB device example\r\n");
+        }else
+        {
+          blink_interval_ms = BLINK_MOUNTED;
+        }
+
+        // response with status OK
+        return tud_control_status(rhport, request);
       }
-    }
-    break;
-
-    case REPORT_ID_GAMEPAD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_gamepad_key = false;
-
-      hid_gamepad_report_t report =
-      {
-        .x   = 0, .y = 0, .z = 0, .rz = 0, .rx = 0, .ry = 0,
-        .hat = 0, .buttons = 0
-      };
-
-      if ( btn )
-      {
-        report.hat = GAMEPAD_HAT_UP;
-        report.buttons = GAMEPAD_BUTTON_A;
-        tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-
-        has_gamepad_key = true;
-      }else
-      {
-        report.hat = GAMEPAD_HAT_CENTERED;
-        report.buttons = 0;
-        if (has_gamepad_key) tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-        has_gamepad_key = false;
-      }
-    }
     break;
 
     default: break;
   }
+
+  // stall unknown request
+  return false;
 }
 
-// Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)
-// tud_hid_report_complete_cb() is used to send the next report after previous one is complete
-void hid_task(void)
+void webserial_task(void)
 {
-  // Poll every 10ms
-  const uint32_t interval_ms = 10;
-  static uint32_t start_ms = 0;
-
-  if ( board_millis() - start_ms < interval_ms) return; // not enough time
-  start_ms += interval_ms;
-
-  uint32_t const btn = board_button_read();
-
-  // Remote wakeup
-  if ( tud_suspended() && btn )
+  if ( web_serial_connected )
   {
-    // Wake up host if we are in suspend mode
-    // and REMOTE_WAKEUP feature is enabled by host
-    tud_remote_wakeup();
-  }else
-  {
-    // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_KEYBOARD, btn);
-  }
-}
-
-// Invoked when sent REPORT successfully to host
-// Application can use this to send the next report
-// Note: For composite reports, report[0] is report ID
-void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint8_t len)
-{
-  (void) instance;
-  (void) len;
-
-  uint8_t next_report_id = report[0] + 1;
-
-  if (next_report_id < REPORT_ID_COUNT)
-  {
-    send_hid_report(next_report_id, board_button_read());
-  }
-}
-
-// Invoked when received GET_REPORT control request
-// Application must fill buffer report's content and return its length.
-// Return zero will cause the stack to STALL request
-uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
-{
-  // TODO not Implemented
-  (void) instance;
-  (void) report_id;
-  (void) report_type;
-  (void) buffer;
-  (void) reqlen;
-
-  return 0;
-}
-
-// Invoked when received SET_REPORT control request or
-// received data on OUT endpoint ( Report ID = 0, Type = 0 )
-void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
-{
-  (void) instance;
-
-  if (report_type == HID_REPORT_TYPE_OUTPUT)
-  {
-    // Set keyboard LED e.g Capslock, Numlock etc...
-    if (report_id == REPORT_ID_KEYBOARD)
+    if ( tud_vendor_available() )
     {
-      // bufsize should be (at least) 1
-      if ( bufsize < 1 ) return;
+      uint8_t buf[64];
+      uint32_t count = tud_vendor_read(buf, sizeof(buf));
 
-      uint8_t const kbd_leds = buffer[0];
-
-      if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
-      {
-        // Capslock On: disable blink, turn led on
-        blink_interval_ms = 0;
-        board_led_write(true);
-      }else
-      {
-        // Caplocks Off: back to normal blink
-        board_led_write(false);
-        blink_interval_ms = BLINK_MOUNTED;
-      }
+      // echo back to both web serial and cdc
+      echo_all(buf, count);
     }
   }
+}
+
+
+//--------------------------------------------------------------------+
+// USB CDC
+//--------------------------------------------------------------------+
+void cdc_task(void)
+{
+  if ( tud_cdc_connected() )
+  {
+    // connected and there are data available
+    if ( tud_cdc_available() )
+    {
+      uint8_t buf[64];
+
+      uint32_t count = tud_cdc_read(buf, sizeof(buf));
+
+      // echo back to both web serial and cdc
+      echo_all(buf, count);
+    }
+  }
+}
+
+// Invoked when cdc when line state changed e.g connected/disconnected
+void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+{
+  (void) itf;
+
+  // connected
+  if ( dtr && rts )
+  {
+    // print initial message when connected
+    tud_cdc_write_str("\r\nTinyUSB WebUSB device example\r\n");
+  }
+}
+
+// Invoked when CDC interface received data from host
+void tud_cdc_rx_cb(uint8_t itf)
+{
+  (void) itf;
 }
 
 //--------------------------------------------------------------------+
@@ -289,9 +269,6 @@ void led_blinking_task(void)
 {
   static uint32_t start_ms = 0;
   static bool led_state = false;
-
-  // blink is disabled
-  if (!blink_interval_ms) return;
 
   // Blink every interval ms
   if ( board_millis() - start_ms < blink_interval_ms) return; // not enough time
