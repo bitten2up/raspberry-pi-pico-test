@@ -36,6 +36,6 @@ jobs:
         run: mkdir build; cd build; export PICO_SDK_PATH=../pico-sdk; cmake ..; make;
       - uses: actions/upload-artifact@v2
         with:
-          name: ubuntu
-          path: build
+          name: bittenpico.uf2
+          path: build/src/bittenpico.uf2
           if-no-files-found: error # 'warn' or 'ignore' are also available, defaults to `warn`
