@@ -33,7 +33,7 @@ jobs:
       - name: clone picosdk
         run: git clone -b master https://github.com/raspberrypi/pico-sdk.git; cd pico-sdk; git submodule update --init; cd ..
       - name: run cmake
-        run: mkdir build; cd build; cmake ..; make;
+        run: mkdir build; cd build; export PICO_SDK_PATH=../pico-sdk; cmake ..; make;
       - uses: actions/upload-artifact@v2
         with:
           name: ubuntu
