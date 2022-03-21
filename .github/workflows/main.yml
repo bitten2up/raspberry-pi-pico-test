@@ -27,10 +27,10 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: install the sdk
-        run: apt install wget
+        run: sudo apt install wget cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential 
 
       # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      - name: clone picosdk
+        run: git clone -b master https://github.com/raspberrypi/pico-sdk.git; cd pico-sdk; git submodule update --init; cd ..
+      - name: run cmake
+        run: mkdir build; cd build; cmake ..; make;
