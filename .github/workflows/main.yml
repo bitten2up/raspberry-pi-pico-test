@@ -34,3 +34,8 @@ jobs:
         run: git clone -b master https://github.com/raspberrypi/pico-sdk.git; cd pico-sdk; git submodule update --init; cd ..
       - name: run cmake
         run: mkdir build; cd build; cmake ..; make;
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ubuntu
+          path: build
+          if-no-files-found: error # 'warn' or 'ignore' are also available, defaults to `warn`
