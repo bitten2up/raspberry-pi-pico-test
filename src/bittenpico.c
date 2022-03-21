@@ -1,7 +1,7 @@
-/* 
+/*
 MIT License
 
-Copyright (c) 2022 bitten 1up
+Copyright (c) 2022 bitten2up
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
- */
+*/
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -29,7 +29,6 @@ SOFTWARE.
 
 #include "bsp/board.h"
 #include "tusb.h"
-
 #include "usb_descriptors.h"
 
 //--------------------------------------------------------------------+
@@ -50,7 +49,7 @@ enum  {
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
-void hid_task(void);
+void video_task(void);
 
 /*------------- MAIN -------------*/
 int main(void)
@@ -63,7 +62,7 @@ int main(void)
     tud_task(); // tinyusb device task
     led_blinking_task();
 
-    hid_task();
+    video_task();
   }
 
   return 0;
@@ -100,186 +99,110 @@ void tud_resume_cb(void)
   blink_interval_ms = BLINK_MOUNTED;
 }
 
-//--------------------------------------------------------------------+
-// USB HID
-//--------------------------------------------------------------------+
 
-static void send_hid_report(uint8_t report_id, uint32_t btn)
+//--------------------------------------------------------------------+
+// USB Video
+//--------------------------------------------------------------------+
+static unsigned frame_num = 0;
+static unsigned tx_busy = 0;
+static unsigned interval_ms = 1000 / FRAME_RATE;
+
+/* YUY2 frame buffer */
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+#include "images.h"
+#else
+static uint8_t frame_buffer[FRAME_WIDTH * FRAME_HEIGHT * 16 / 8];
+static void fill_color_bar(uint8_t *buffer, unsigned start_position)
 {
-  // skip if hid is not ready yet
-  if ( !tud_hid_ready() ) return;
+  /* EBU color bars
+   * See also https://stackoverflow.com/questions/6939422 */
+  static uint8_t const bar_color[8][4] = {
+    /*  Y,   U,   Y,   V */
+    { 235, 128, 235, 128}, /* 100% White */
+    { 219,  16, 219, 138}, /* Yellow */
+    { 188, 154, 188,  16}, /* Cyan */
+    { 173,  42, 173,  26}, /* Green */
+    {  78, 214,  78, 230}, /* Magenta */
+    {  63, 102,  63, 240}, /* Red */
+    {  32, 240,  32, 118}, /* Blue */
+    {  16, 128,  16, 128}, /* Black */
+  };
+  uint8_t *p;
 
-  switch(report_id)
-  {
-    case REPORT_ID_KEYBOARD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_keyboard_key = false;
-
-      if ( btn )
-      {
-        uint8_t keycode[6] = { 0 };
-        keycode[0] = HID_KEY_A;
-
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
-        has_keyboard_key = true;
-      }else
-      {
-        // send empty key report if previously has key pressed
-        if (has_keyboard_key) tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-        has_keyboard_key = false;
+  /* Generate the 1st line */
+  uint8_t *end = &buffer[FRAME_WIDTH * 2];
+  unsigned idx = (FRAME_WIDTH / 2 - 1) - (start_position % (FRAME_WIDTH / 2));
+  p = &buffer[idx * 4];
+  for (unsigned i = 0; i < 8; ++i) {
+    for (int j = 0; j < FRAME_WIDTH / (2 * 8); ++j) {
+      memcpy(p, &bar_color[i], 4);
+      p += 4;
+      if (end <= p) {
+        p = buffer;
       }
     }
-    break;
-
-    case REPORT_ID_MOUSE:
-    {
-      int8_t const delta = 5;
-
-      // no button, right + down, no scroll, no pan
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
-    }
-    break;
-
-    case REPORT_ID_CONSUMER_CONTROL:
-    {
-      // use to avoid send multiple consecutive zero report
-      static bool has_consumer_key = false;
-
-      if ( btn )
-      {
-        // volume down
-        uint16_t volume_down = HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-        tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &volume_down, 2);
-        has_consumer_key = true;
-      }else
-      {
-        // send empty key report (release key) if previously has key pressed
-        uint16_t empty_key = 0;
-        if (has_consumer_key) tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &empty_key, 2);
-        has_consumer_key = false;
-      }
-    }
-    break;
-
-    case REPORT_ID_GAMEPAD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_gamepad_key = false;
-
-      hid_gamepad_report_t report =
-      {
-        .x   = 0, .y = 0, .z = 0, .rz = 0, .rx = 0, .ry = 0,
-        .hat = 0, .buttons = 0
-      };
-
-      if ( btn )
-      {
-        report.hat = GAMEPAD_HAT_UP;
-        report.buttons = GAMEPAD_BUTTON_A;
-        tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-
-        has_gamepad_key = true;
-      }else
-      {
-        report.hat = GAMEPAD_HAT_CENTERED;
-        report.buttons = 0;
-        if (has_gamepad_key) tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-        has_gamepad_key = false;
-      }
-    }
-    break;
-
-    default: break;
+  }
+  /* Duplicate the 1st line to the others */
+  p = &buffer[FRAME_WIDTH * 2];
+  for (unsigned i = 1; i < FRAME_HEIGHT; ++i) {
+    memcpy(p, buffer, FRAME_WIDTH * 2);
+    p += FRAME_WIDTH * 2;
   }
 }
+#endif
 
-// Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)
-// tud_hid_report_complete_cb() is used to send the next report after previous one is complete
-void hid_task(void)
+void video_task(void)
 {
-  // Poll every 10ms
-  const uint32_t interval_ms = 10;
-  static uint32_t start_ms = 0;
+  static unsigned start_ms = 0;
+  static unsigned already_sent = 0;
 
-  if ( board_millis() - start_ms < interval_ms) return; // not enough time
+  if (!tud_video_n_streaming(0, 0)) {
+    already_sent  = 0;
+    frame_num     = 0;
+    return;
+  }
+
+  if (!already_sent) {
+    already_sent = 1;
+    start_ms = board_millis();
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+    tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                           FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#else
+    fill_color_bar(frame_buffer, frame_num);
+    tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#endif
+  }
+
+  unsigned cur = board_millis();
+  if (cur - start_ms < interval_ms) return; // not enough time
+  if (tx_busy) return;
   start_ms += interval_ms;
 
-  uint32_t const btn = board_button_read();
-
-  // Remote wakeup
-  if ( tud_suspended() && btn )
-  {
-    // Wake up host if we are in suspend mode
-    // and REMOTE_WAKEUP feature is enabled by host
-    tud_remote_wakeup();
-  }else
-  {
-    // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_KEYBOARD, btn);
-  }
+#ifdef CFG_EXAMPLE_VIDEO_READONLY
+  tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+                         FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#else
+  fill_color_bar(frame_buffer, frame_num);
+  tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+#endif
 }
 
-// Invoked when sent REPORT successfully to host
-// Application can use this to send the next report
-// Note: For composite reports, report[0] is report ID
-void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint8_t len)
+void tud_video_frame_xfer_complete_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx)
 {
-  (void) instance;
-  (void) len;
-
-  uint8_t next_report_id = report[0] + 1;
-
-  if (next_report_id < REPORT_ID_COUNT)
-  {
-    send_hid_report(next_report_id, board_button_read());
-  }
+  (void)ctl_idx; (void)stm_idx;
+  tx_busy = 0;
+  /* flip buffer */
+  ++frame_num;
 }
 
-// Invoked when received GET_REPORT control request
-// Application must fill buffer report's content and return its length.
-// Return zero will cause the stack to STALL request
-uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
+			video_probe_and_commit_control_t const *parameters)
 {
-  // TODO not Implemented
-  (void) instance;
-  (void) report_id;
-  (void) report_type;
-  (void) buffer;
-  (void) reqlen;
-
-  return 0;
-}
-
-// Invoked when received SET_REPORT control request or
-// received data on OUT endpoint ( Report ID = 0, Type = 0 )
-void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
-{
-  (void) instance;
-
-  if (report_type == HID_REPORT_TYPE_OUTPUT)
-  {
-    // Set keyboard LED e.g Capslock, Numlock etc...
-    if (report_id == REPORT_ID_KEYBOARD)
-    {
-      // bufsize should be (at least) 1
-      if ( bufsize < 1 ) return;
-
-      uint8_t const kbd_leds = buffer[0];
-
-      if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
-      {
-        // Capslock On: disable blink, turn led on
-        blink_interval_ms = 0;
-        board_led_write(true);
-      }else
-      {
-        // Caplocks Off: back to normal blink
-        board_led_write(false);
-        blink_interval_ms = BLINK_MOUNTED;
-      }
-    }
-  }
+  (void)ctl_idx; (void)stm_idx;
+  /* convert unit to ms from 100 ns */
+  interval_ms = parameters->dwFrameInterval / 10000;
+  return VIDEO_ERROR_NONE;
 }
 
 //--------------------------------------------------------------------+
@@ -289,9 +212,6 @@ void led_blinking_task(void)
 {
   static uint32_t start_ms = 0;
   static bool led_state = false;
-
-  // blink is disabled
-  if (!blink_interval_ms) return;
 
   // Blink every interval ms
   if ( board_millis() - start_ms < blink_interval_ms) return; // not enough time
