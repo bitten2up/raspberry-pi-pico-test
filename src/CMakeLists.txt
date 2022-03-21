@@ -18,4 +18,4 @@ target_link_libraries(bittenpico PUBLIC pico_stdlib tinyusb_device tinyusb_board
 pico_add_extra_outputs(bittenpico)
 
 # add url via pico_set_program_url
-example_auto_set_url(bitten2up.github.io/bittens-adventure)
+example_auto_set_url(bittenpico)
