@@ -119,10 +119,10 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-  "TinyUSB",                     // 1: Manufacturer
-  "TinyUSB Device",              // 2: Product
-  "123456",                      // 3: Serials, should use chip ID
-  "TinyUSB UVC",                 // 4: UVC Interface
+  "bitten2up",                     // 1: Manufacturer
+  "Bitten's adventure",              // 2: Product
+  "000001",                      // 3: Serials, should use chip ID
+  "iced bitten",                 // 4: UVC Interface
 };
 
 static uint16_t _desc_str[32];
