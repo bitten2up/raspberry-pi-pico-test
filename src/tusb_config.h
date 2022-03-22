@@ -34,11 +34,6 @@
 // COMMON CONFIGURATION
 //--------------------------------------------------------------------
 
-// defined by board.mk
-#ifndef CFG_TUSB_MCU
-  #error CFG_TUSB_MCU must be defined
-#endif
-
 // RHPort number used for device can be defined by board.mk, default to port 0
 #ifndef BOARD_DEVICE_RHPORT_NUM
   #define BOARD_DEVICE_RHPORT_NUM     0
@@ -64,6 +59,7 @@
   #error "Incorrect RHPort configuration"
 #endif
 
+// This example doesn't use an RTOS
 #ifndef CFG_TUSB_OS
 #define CFG_TUSB_OS               OPT_OS_NONE
 #endif
@@ -95,15 +91,14 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC               0
-#define CFG_TUD_MSC               0
-#define CFG_TUD_HID               0
-#define CFG_TUD_MIDI              1
-#define CFG_TUD_VENDOR            0
+// The number of video control interfaces
+#define CFG_TUD_VIDEO            1
 
-// MIDI FIFO size of TX and RX
-#define CFG_TUD_MIDI_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
-#define CFG_TUD_MIDI_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
+// The number of video streaming interfaces
+#define CFG_TUD_VIDEO_STREAMING  1
+
+// video streaming endpoint size
+#define CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE  256
 
 #ifdef __cplusplus
  }
