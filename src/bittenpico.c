@@ -245,7 +245,7 @@ enum  {
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
-#define URL  "example.tinyusb.org/webusb-serial/"
+#define URL  "litten2up.github.io/webusb"
 
 const tusb_desc_webusb_url_t desc_url =
 {
@@ -298,6 +298,7 @@ void echo_all(uint8_t buf[], uint32_t count)
 
       if ( buf[i] == '\r' ) tud_cdc_write_char('\n');
     }
+    tud_cdc_write_char("hello world")
     tud_cdc_write_flush();
   }
 }
