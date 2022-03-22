@@ -35,7 +35,7 @@
 
 #define FRAME_WIDTH   128
 #define FRAME_HEIGHT  96
-#define FRAME_RATE    60
+#define FRAME_RATE    10
 
 enum {
   ITF_NUM_VIDEO_CONTROL = 0,
