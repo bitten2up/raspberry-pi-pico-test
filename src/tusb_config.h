@@ -34,25 +34,15 @@
 // COMMON CONFIGURATION
 //--------------------------------------------------------------------
 
-// defined by board.mk
-#ifndef CFG_TUSB_MCU
-  #error CFG_TUSB_MCU must be defined
-#endif
-
 // RHPort number used for device can be defined by board.mk, default to port 0
 #ifndef BOARD_DEVICE_RHPORT_NUM
   #define BOARD_DEVICE_RHPORT_NUM     0
 #endif
 
 // RHPort max operational speed can defined by board.mk
-// Default to Highspeed for MCU with internal HighSpeed PHY (can be port specific), otherwise FullSpeed
+// Default to max (auto) speed for MCU with internal HighSpeed PHY
 #ifndef BOARD_DEVICE_RHPORT_SPEED
-  #if (CFG_TUSB_MCU == OPT_MCU_LPC18XX || CFG_TUSB_MCU == OPT_MCU_LPC43XX || CFG_TUSB_MCU == OPT_MCU_MIMXRT10XX || \
-       CFG_TUSB_MCU == OPT_MCU_NUC505  || CFG_TUSB_MCU == OPT_MCU_CXD56)
-    #define BOARD_DEVICE_RHPORT_SPEED   OPT_MODE_HIGH_SPEED
-  #else
-    #define BOARD_DEVICE_RHPORT_SPEED   OPT_MODE_FULL_SPEED
-  #endif
+  #define BOARD_DEVICE_RHPORT_SPEED   OPT_MODE_DEFAULT_SPEED
 #endif
 
 // Device mode with rhport and speed defined by board.mk
@@ -64,6 +54,7 @@
   #error "Incorrect RHPort configuration"
 #endif
 
+// This example doesn't use an RTOS
 #ifndef CFG_TUSB_OS
 #define CFG_TUSB_OS               OPT_OS_NONE
 #endif
@@ -95,21 +86,14 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC               1
-#define CFG_TUD_MSC               0
-#define CFG_TUD_HID               0
-#define CFG_TUD_MIDI              0
-#define CFG_TUD_VENDOR            1
+// The number of video control interfaces
+#define CFG_TUD_VIDEO            1
 
-// CDC FIFO size of TX and RX
-#define CFG_TUD_CDC_RX_BUFSIZE    (TUD_OPT_HIGH_SPEED ? 512 : 64)
-#define CFG_TUD_CDC_TX_BUFSIZE    (TUD_OPT_HIGH_SPEED ? 512 : 64)
+// The number of video streaming interfaces
+#define CFG_TUD_VIDEO_STREAMING  1
 
-// Vendor FIFO size of TX and RX
-// If not configured vendor endpoints will not be buffered
-#define CFG_TUD_VENDOR_RX_BUFSIZE (TUD_OPT_HIGH_SPEED ? 512 : 64)
-#define CFG_TUD_VENDOR_TX_BUFSIZE (TUD_OPT_HIGH_SPEED ? 512 : 64)
-
+// video streaming endpoint size
+#define CFG_TUD_VIDEO_STREAMING_EP_BUFSIZE  256
 
 #ifdef __cplusplus
  }
