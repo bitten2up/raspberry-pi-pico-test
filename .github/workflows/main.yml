@@ -28,12 +28,11 @@ jobs:
       # Runs a single command using the runners shell
       - name: install the sdk
         run: sudo apt install wget cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential 
-
       # Runs a set of commands using the runners shell
       - name: clone picosdk
         run: git clone -b master https://github.com/raspberrypi/pico-sdk.git; cd pico-sdk; git submodule update --init; cd ..
       - name: run cmake
-        run: mkdir build; cd build; export PICO_SDK_PATH=../pico-sdk; cmake ..; make;
+        run: mkdir build; cd build; export PICO_SDK_PATH=../pico-sdk;  cmake ..; make;
       - uses: actions/upload-artifact@v2
         with:
           name: bittenpico.uf2
