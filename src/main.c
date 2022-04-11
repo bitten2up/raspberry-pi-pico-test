@@ -30,22 +30,6 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
-#if TU_CHECK_MCU(ESP32S2) || TU_CHECK_MCU(ESP32S3)
-  // ESP-IDF need "freertos/" prefix in include path.
-  // CFG_TUSB_OS_INC_PATH should be defined accordingly.
-  #include "freertos/FreeRTOS.h"
-  #include "freertos/semphr.h"
-  #include "freertos/queue.h"
-  #include "freertos/task.h"
-  #include "freertos/timers.h"
-#else
-  #include "FreeRTOS.h"
-  #include "semphr.h"
-  #include "queue.h"
-  #include "task.h"
-  #include "timers.h"
-#endif
-
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
@@ -61,80 +45,24 @@ enum  {
   BLINK_SUSPENDED = 2500,
 };
 
-// static timer
-StaticTimer_t blinky_tmdef;
-TimerHandle_t blinky_tm;
+static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
-// static task for usbd
-// Increase stack size when debug log is enabled
-#if CFG_TUSB_DEBUG
-  #define USBD_STACK_SIZE     (3*configMINIMAL_STACK_SIZE)
-#else
-  #define USBD_STACK_SIZE     (3*configMINIMAL_STACK_SIZE/2)
-#endif
+void led_blinking_task(void);
 
-StackType_t  usb_device_stack[USBD_STACK_SIZE];
-StaticTask_t usb_device_taskdef;
-
-// static task for cdc
-#define CDC_STACK_SZIE      configMINIMAL_STACK_SIZE
-StackType_t  cdc_stack[CDC_STACK_SZIE];
-StaticTask_t cdc_taskdef;
-
-
-void led_blinky_cb(TimerHandle_t xTimer);
-void usb_device_task(void* param);
-void cdc_task(void* params);
-
-//--------------------------------------------------------------------+
-// Main
-//--------------------------------------------------------------------+
-
+/*------------- MAIN -------------*/
 int main(void)
 {
   board_init();
 
-  // soft timer for blinky
-  blinky_tm = xTimerCreateStatic(NULL, pdMS_TO_TICKS(BLINK_NOT_MOUNTED), true, NULL, led_blinky_cb, &blinky_tmdef);
-  xTimerStart(blinky_tm, 0);
-
-  // Create a task for tinyusb device stack
-  (void) xTaskCreateStatic( usb_device_task, "usbd", USBD_STACK_SIZE, NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_taskdef);
-
-  // Create CDC task
-  (void) xTaskCreateStatic( cdc_task, "cdc", CDC_STACK_SZIE, NULL, configMAX_PRIORITIES-2, cdc_stack, &cdc_taskdef);
-
-  // skip starting scheduler (and return) for ESP32-S2 or ESP32-S3
-#if !( TU_CHECK_MCU(ESP32S2) || TU_CHECK_MCU(ESP32S3) )
-  vTaskStartScheduler();
-#endif
-
-  return 0;
-}
-
-#if CFG_TUSB_MCU == OPT_MCU_ESP32S2 || CFG_TUSB_MCU == OPT_MCU_ESP32S3
-void app_main(void)
-{
-  main();
-}
-#endif
-
-// USB Device Driver task
-// This top level thread process all usb events and invoke callbacks
-void usb_device_task(void* param)
-{
-  (void) param;
-
-  // This should be called after scheduler/kernel is started.
-  // Otherwise it could cause kernel issue since USB IRQ handler does use RTOS queue API.
   tusb_init();
 
-  // RTOS forever loop
   while (1)
   {
-    // tinyusb device task
-    tud_task();
+    tud_task(); // tinyusb device task
+    led_blinking_task();
   }
+
+  return 0;
 }
 
 //--------------------------------------------------------------------+
@@ -144,13 +72,13 @@ void usb_device_task(void* param)
 // Invoked when device is mounted
 void tud_mount_cb(void)
 {
-  xTimerChangePeriod(blinky_tm, pdMS_TO_TICKS(BLINK_MOUNTED), 0);
+  blink_interval_ms = BLINK_MOUNTED;
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
-  xTimerChangePeriod(blinky_tm, pdMS_TO_TICKS(BLINK_NOT_MOUNTED), 0);
+  blink_interval_ms = BLINK_NOT_MOUNTED;
 }
 
 // Invoked when usb bus is suspended
@@ -159,81 +87,26 @@ void tud_umount_cb(void)
 void tud_suspend_cb(bool remote_wakeup_en)
 {
   (void) remote_wakeup_en;
-  xTimerChangePeriod(blinky_tm, pdMS_TO_TICKS(BLINK_SUSPENDED), 0);
+  blink_interval_ms = BLINK_SUSPENDED;
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
-  xTimerChangePeriod(blinky_tm, pdMS_TO_TICKS(BLINK_MOUNTED), 0);
-}
-
-//--------------------------------------------------------------------+
-// USB CDC
-//--------------------------------------------------------------------+
-void cdc_task(void* params)
-{
-  (void) params;
-
-  // RTOS forever loop
-  while ( 1 )
-  {
-    // connected() check for DTR bit
-    // Most but not all terminal client set this when making connection
-    // if ( tud_cdc_connected() )
-    {
-      // There are data available
-      if ( tud_cdc_available() )
-      {
-        uint8_t buf[64];
-
-        // read and echo back
-        uint32_t count = tud_cdc_read(buf, sizeof(buf));
-        (void) count;
-
-        // Echo back
-        // Note: Skip echo by commenting out write() and write_flush()
-        // for throughput test e.g
-        //    $ dd if=/dev/zero of=/dev/ttyACM0 count=10000
-        tud_cdc_write(buf, count);
-        tud_cdc_write_flush();
-      }
-    }
-
-    // For ESP32-S2 this delay is essential to allow idle how to run and reset wdt
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
-
-// Invoked when cdc when line state changed e.g connected/disconnected
-void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
-{
-  (void) itf;
-  (void) rts;
-
-  // TODO set some indicator
-  if ( dtr )
-  {
-    // Terminal connected
-  }else
-  {
-    // Terminal disconnected
-  }
-}
-
-// Invoked when CDC interface received data from host
-void tud_cdc_rx_cb(uint8_t itf)
-{
-  (void) itf;
+  blink_interval_ms = BLINK_MOUNTED;
 }
 
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
-void led_blinky_cb(TimerHandle_t xTimer)
+void led_blinking_task(void)
 {
-  (void) xTimer;
+  static uint32_t start_ms = 0;
   static bool led_state = false;
+
+  // Blink every interval ms
+  if ( board_millis() - start_ms < blink_interval_ms) return; // not enough time
+  start_ms += blink_interval_ms;
 
   board_led_write(led_state);
   led_state = 1 - led_state; // toggle
