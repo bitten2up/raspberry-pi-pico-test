@@ -43,27 +43,27 @@
 //--------------------------------------------------------------------+
 tusb_desc_device_t const desc_device =
 {
-  .bLength            = sizeof(tusb_desc_device_t),
-  .bDescriptorType    = TUSB_DESC_DEVICE,
-  .bcdUSB             = USB_BCD,
+    .bLength            = sizeof(tusb_desc_device_t),
+    .bDescriptorType    = TUSB_DESC_DEVICE,
+    .bcdUSB             = USB_BCD,
 
-  // Use Interface Association Descriptor (IAD) for CDC
-  // As required by USB Specs IAD's subclass must be common class (2) and protocol must be IAD (1)
-  .bDeviceClass       = TUSB_CLASS_MISC,
-  .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-  .bDeviceProtocol    = MISC_PROTOCOL_IAD,
+    // Use Interface Association Descriptor (IAD) for CDC
+    // As required by USB Specs IAD's subclass must be common class (2) and protocol must be IAD (1)
+    .bDeviceClass       = TUSB_CLASS_MISC,
+    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
 
-  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-  .idVendor           = USB_VID,
-  .idProduct          = USB_PID,
-  .bcdDevice          = 0x0100,
+    .idVendor           = USB_VID,
+    .idProduct          = USB_PID,
+    .bcdDevice          = 0x0100,
 
-  .iManufacturer      = 0x01,
-  .iProduct           = 0x02,
-  .iSerialNumber      = 0x03,
+    .iManufacturer      = 0x01,
+    .iProduct           = 0x02,
+    .iSerialNumber      = 0x03,
 
-  .bNumConfigurations = 0x01
+    .bNumConfigurations = 0x01
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
@@ -95,8 +95,8 @@ enum
   #define EPNUM_MSC_OUT     0x05
   #define EPNUM_MSC_IN      0x85
 
-#elif CFG_TUSB_MCU == OPT_MCU_SAMG  || CFG_TUSB_MCU ==  OPT_MCU_SAMX7X
-  // SAMG & SAME70 don't support a same endpoint number with different direction IN and OUT
+#elif CFG_TUSB_MCU == OPT_MCU_SAMG
+  // SAMG doesn't support a same endpoint number with different direction IN and OUT
   //    e.g EP1 OUT & EP1 IN cannot exist together
   #define EPNUM_CDC_NOTIF   0x81
   #define EPNUM_CDC_OUT     0x02
@@ -104,18 +104,6 @@ enum
 
   #define EPNUM_MSC_OUT     0x04
   #define EPNUM_MSC_IN      0x85
-
-#elif CFG_TUSB_MCU == OPT_MCU_CXD56
-  // CXD56 doesn't support a same endpoint number with different direction IN and OUT
-  //    e.g EP1 OUT & EP1 IN cannot exist together
-  // CXD56 USB driver has fixed endpoint type (bulk/interrupt/iso) and direction (IN/OUT) by its number
-  // 0 control (IN/OUT), 1 Bulk (IN), 2 Bulk (OUT), 3 In (IN), 4 Bulk (IN), 5 Bulk (OUT), 6 In (IN)
-  #define EPNUM_CDC_NOTIF   0x83
-  #define EPNUM_CDC_OUT     0x02
-  #define EPNUM_CDC_IN      0x81
-
-  #define EPNUM_MSC_OUT     0x05
-  #define EPNUM_MSC_IN      0x84
 
 #else
   #define EPNUM_CDC_NOTIF   0x81
@@ -129,7 +117,6 @@ enum
 
 #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN)
 
-// full speed configuration
 uint8_t const desc_fs_configuration[] =
 {
   // Config number, interface count, string index, total length, attribute, power in mA
@@ -206,7 +193,6 @@ uint8_t const* tud_descriptor_other_speed_configuration_cb(uint8_t index)
 
 #endif // highspeed
 
-
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
@@ -230,10 +216,10 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-  "bitten1up",                     // 1: Manufacturer
-  "Bitten storage",              // 2: Product
+  "Scarlet",                     // 1: Manufacturer
+  "bitten",              // 2: Product
   "123456789012",                // 3: Serials, should use chip ID
-  "Bitten console",                 // 4: CDC Interface
+  "bitten CDC",                 // 4: CDC Interface
   "bitten MSC",                 // 5: MSC Interface
 };
 

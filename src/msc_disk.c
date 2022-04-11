@@ -28,15 +28,12 @@
 
 #if CFG_TUD_MSC
 
-// whether host does safe-eject
-static bool ejected = false;
-
 // Some MCU doesn't have enough 8KB SRAM to store the whole disk
 // We will use Flash as read-only disk with board that has
 // CFG_EXAMPLE_MSC_READONLY defined
 
 #define README_CONTENTS \
-"hello user\r\n\r\nThis is the creator speaking\r\njust drop a file called code.bin with your code inside of it."
+"This is the readme for bittenusb\r\njust add some code in code.bin"
 
 enum
 {
@@ -61,7 +58,7 @@ uint8_t msc_disk[DISK_BLOCK_NUM][DISK_BLOCK_SIZE] =
       0xEB, 0x3C, 0x90, 0x4D, 0x53, 0x44, 0x4F, 0x53, 0x35, 0x2E, 0x30, 0x00, 0x02, 0x01, 0x01, 0x00,
       0x01, 0x10, 0x00, 0x10, 0x00, 0xF8, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x29, 0x34, 0x12, 0x00, 0x00, 'b' , 'i' , 't' , 't' , 'e' ,
-      'n' , ' ' , 'M' , 'S' , 'C' , ' ' , 0x46, 0x41, 0x54, 0x31, 0x32, 0x20, 0x20, 0x20, 0x00, 0x00,
+      'n' , ' ' , ' ' , 'M' , 'S' , 'C' , 0x46, 0x41, 0x54, 0x31, 0x32, 0x20, 0x20, 0x20, 0x00, 0x00,
 
       // Zero up to 2 last bytes of FAT magic code
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -105,7 +102,7 @@ uint8_t msc_disk[DISK_BLOCK_NUM][DISK_BLOCK_SIZE] =
   //------------- Block2: Root Directory -------------//
   {
       // first entry is volume label
-      'B' , 'i' , 't' , 't' , 'e' , 'n' , ' ' , 'M' , 'S' , 'C' , ' ' , 0x08, 0x00, 0x00, 0x00, 0x00,
+      'b' , 'i' , 't' , 't' , 'e' , 'n' , ' ' , ' ' , 'M' , 'S' , 'C' , 0x08, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x6D, 0x65, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       // second entry is readme file
       'R' , 'E' , 'A' , 'D' , 'M' , 'E' , ' ' , ' ' , 'T' , 'X' , 'T' , 0x20, 0x00, 0xC6, 0x52, 0x6D,
@@ -123,9 +120,9 @@ void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16
 {
   (void) lun;
 
-  const char vid[] = "Bitten Storage";
+  const char vid[] = "Bitten interputator";
   const char pid[] = "Mass Storage";
-  const char rev[] = "0.1";
+  const char rev[] = "1.0";
 
   memcpy(vendor_id  , vid, strlen(vid));
   memcpy(product_id , pid, strlen(pid));
@@ -138,13 +135,7 @@ bool tud_msc_test_unit_ready_cb(uint8_t lun)
 {
   (void) lun;
 
-  // RAM disk is ready until ejected
-  if (ejected) {
-    tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3a, 0x00);
-    return false;
-  }
-
-  return true;
+  return true; // RAM disk is always ready
 }
 
 // Invoked when received SCSI_CMD_READ_CAPACITY_10 and SCSI_CMD_READ_FORMAT_CAPACITY to determine the disk size
@@ -173,7 +164,6 @@ bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, boo
     }else
     {
       // unload disk storage
-      ejected = true;
     }
   }
 
@@ -193,17 +183,6 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
   memcpy(buffer, addr, bufsize);
 
   return bufsize;
-}
-
-bool tud_msc_is_writable_cb (uint8_t lun)
-{
-  (void) lun;
-
-#ifdef CFG_EXAMPLE_MSC_READONLY
-  return false;
-#else
-  return true;
-#endif
 }
 
 // Callback invoked when received WRITE10 command.
