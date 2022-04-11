@@ -6,6 +6,7 @@ target_sources(bittenpico PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/main.c
         ${CMAKE_CURRENT_LIST_DIR}/msc_disk.c
         ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
+        ${CMAKE_CURRENT_LIST_DIR}/freertos_hook.c
         )
 
 # Make sure TinyUSB can find tusb_config.h
