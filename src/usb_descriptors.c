@@ -233,8 +233,8 @@ char const* string_desc_arr [] =
   "Scarlet",                     // 1: Manufacturer
   "bittenlang",              // 2: Product
   "rp2040-bitten",                // 3: Serials, should use chip ID
-  "TinyU CDC",                 // 4: CDC Interface
-  "TinyUSB MSC",                 // 5: MSC Interface
+  "bittenlang CDC",                 // 4: CDC Interface
+  "bittenlang MSC",                 // 5: MSC Interface
 };
 
 static uint16_t _desc_str[32];
