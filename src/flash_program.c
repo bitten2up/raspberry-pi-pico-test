@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
-
+/*
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -56,3 +56,4 @@ int main() {
     else
         printf("Programming successful!\n");
 }
+*/
