@@ -118,14 +118,14 @@ static void fill_color_bar(uint8_t *buffer, unsigned start_position)
    * See also https://stackoverflow.com/questions/6939422 */
   static uint8_t const bar_color[8][4] = {
     /*  Y,   U,   Y,   V */
-    {  78, 214,  78, 230}, /* 100% White */
-    {  78, 214,  78, 230}, /* Yellow */
-    {  78, 214,  78, 230}, /* Cyan */
-    {  78, 214,  78, 230}, /* Green */
+    { 235, 128, 235, 128}, /* 100% White */
+    { 219,  16, 219, 138}, /* Yellow */
+    { 188, 154, 188,  16}, /* Cyan */
+    { 173,  42, 173,  26}, /* Green */
     {  78, 214,  78, 230}, /* Magenta */
-    {  78, 214,  78, 230}, /* Red */
-    {  78, 214,  78, 230}, /* Blue */
-    {  78, 214,  78, 230}, /* Black */
+    {  63, 102,  63, 240}, /* Red */
+    {  32, 240,  32, 118}, /* Blue */
+    {  16, 128,  16, 128}, /* Black */
   };
   uint8_t *p;
 
