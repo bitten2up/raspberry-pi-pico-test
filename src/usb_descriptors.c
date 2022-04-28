@@ -77,22 +77,14 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_VIDEO_CAPTURE_DESC_LEN)
 
-#if CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || CFG_TUSB_MCU == OPT_MCU_LPC177X_8X || CFG_TUSB_MCU == OPT_MCU_LPC40XX
+#if TU_CHECK_MCU(LPC175X_6X) || TU_CHECK_MCU(LPC177X_8X) || TU_CHECK_MCU(LPC40XX)
   // LPC 17xx and 40xx endpoint type (bulk/interrupt/iso) are fixed by its number
   // 0 control, 1 In, 2 Bulk, 3 Iso, 4 In, 5 Bulk etc ...
   #define EPNUM_VIDEO_IN    0x83
 
-#elif CFG_TUSB_MCU == OPT_MCU_SAMG || CFG_TUSB_MCU == OPT_MCU_CXD56
-  // SAMG doesn't support a same endpoint number with different direction IN and OUT
-  //    e.g EP1 OUT & EP1 IN cannot exist together
-  #define EPNUM_VIDEO_IN    0x81
-
-#elif CFG_TUSB_MCU == OPT_MCU_CXD56
-  // CXD56 doesn't support a same endpoint number with different direction IN and OUT
-  //    e.g EP1 OUT & EP1 IN cannot exist together
-  // CXD56 USB driver has fixed endpoint type (bulk/interrupt/iso) and direction (IN/OUT) by its number
-  // 0 control (IN/OUT), 1 Bulk (IN), 2 Bulk (OUT), 3 In (IN), 4 Bulk (IN), 5 Bulk (OUT), 6 In (IN)
-  #define EPNUM_VIDEO_IN    0x81
+#elif TU_CHECK_MCU(NRF5X)
+  // nRF5x ISO can only be endpoint 8
+  #define EPNUM_VIDEO_IN    0x88
 
 #else
   #define EPNUM_VIDEO_IN    0x81
@@ -127,10 +119,10 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-  "TinyUSB",                     // 1: Manufacturer
-  "TinyUSB Device",              // 2: Product
+  "Scarlet",                     // 1: Manufacturer
+  "bitten's adventure???",              // 2: Product
   "123456",                      // 3: Serials, should use chip ID
-  "TinyUSB UVC",                 // 4: UVC Interface
+  "bitten UVC",                 // 4: UVC Interface
 };
 
 static uint16_t _desc_str[32];
