@@ -30,7 +30,7 @@ jobs:
         run: sudo apt install wget cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential 
       # Runs a set of commands using the runners shell
       - name: run cmake
-        run: mkdir build; cd build; export PICO_SDK_PATH=../pico-sdk; export PICO_EXTRAS_PATH=../pico-examples cmake ..; make;
+        run: mkdir build; cd build; cmake ..; make;
       - uses: actions/upload-artifact@v2
         with:
           name: bitten-pico
