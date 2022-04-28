@@ -120,9 +120,9 @@ char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
   "Scarlet",                     // 1: Manufacturer
-  "Bitten's adventure pico???",              // 2: Product
+  "bitten's adventure???",              // 2: Product
   "123456",                      // 3: Serials, should use chip ID
-  "Video out",                 // 4: UVC Interface
+  "bitten UVC",                 // 4: UVC Interface
 };
 
 static uint16_t _desc_str[32];
