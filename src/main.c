@@ -64,8 +64,8 @@ int main(void)
   stdio_init_all();
   gpio_init(BUTTEN_PIN);
   gpio_set_dir(BUTTEN_PIN, GPIO_IN);
-  gpio_pull_up(BUTTEN_PIN)
-  bool button=gpio_get(BUTTEN_PIN)
+  gpio_pull_up(BUTTEN_PIN);
+  bool button=gpio_get(BUTTEN_PIN);
   set_sys_clock_khz(176000, true);
   if (!button){
     flash();
@@ -257,7 +257,7 @@ void flash(void) {
       sleep_ms(250);
       gpio_put(LED2_PIN, 1);
       sleep_ms(250);
-      gpio_put(LED2_PIN, 0)
+      gpio_put(LED2_PIN, 0);
       printf("Done. Read back target region:\n");
       print_buf(flash_target_contents, FLASH_PAGE_SIZE);
 
