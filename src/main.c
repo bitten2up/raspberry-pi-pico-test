@@ -32,7 +32,6 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "pico/binary_info.h"
-const uint LED_PIN = 21;
 const uint LED2_PIN = 12;
 const uint BUTTEN_PIN = 15;
 //--------------------------------------------------------------------+
