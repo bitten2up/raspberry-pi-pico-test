@@ -246,7 +246,7 @@ void flash(void) {
     sleep_ms(250);
     gpio_put(LED2_PIN, 1);
     if(program){
-      uint8_t data[FLASH_PAGE_SIZE] = "bitten2up, made by Scarlet: She/her"
+      uint8_t data[FLASH_PAGE_SIZE] = "bitten2up, made by Scarlet: She/her";
 
       printf("Generated random data:\n");
       print_buf(data, FLASH_PAGE_SIZE);
