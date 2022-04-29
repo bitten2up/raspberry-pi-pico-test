@@ -27,21 +27,16 @@
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"   // stdlib 
-#include "hardware/irq.h"  // interrupts
-#include "hardware/pwm.h"  // pwm 
-#include "hardware/sync.h" // wait for interrupt 
-
+#include "hardware/flash.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
-#define AUDIO_PIN 28
-#include "sample.h"
-int wav_position = 0;
-
+#include "pico/binary_info.h"
+const uint LED2_PIN = 14;
+const uint BUTTEN_PIN = 15;
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
-
 /* Blink pattern
  * - 250 ms  : device not mounted
  * - 1000 ms : device mounted
@@ -57,19 +52,8 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
 void video_task(void);
-/*------------- PWMI --------------*/
-void pwm_interrupt_handler() {
-    pwm_clear_irq(pwm_gpio_to_slice_num(AUDIO_PIN));    
-    if (wav_position < (WAV_DATA_LENGTH<<3) - 1) { 
-        // set pwm level 
-        // allow the pwm value to repeat for 8 cycles this is >>3 
-        pwm_set_gpio_level(AUDIO_PIN, WAV_DATA[wav_position>>3]);  
-        wav_position++;
-    } else {
-        // reset to start
-        wav_position = 0;
-    }
-}
+void flash(void);
+
 /*------------- MAIN -------------*/
 int main(void)
 {
@@ -78,36 +62,14 @@ int main(void)
    * multiple of typical audio sampling rates.
    */
   stdio_init_all();
-  set_sys_clock_khz(176000, true); 
-  gpio_set_function(AUDIO_PIN, GPIO_FUNC_PWM);
-
-  int audio_pin_slice = pwm_gpio_to_slice_num(AUDIO_PIN);
-
-  // Setup PWM interrupt to fire when PWM cycle is complete
-  pwm_clear_irq(audio_pin_slice);
-  pwm_set_irq_enabled(audio_pin_slice, true);
-  // set the handle function above
-  irq_set_exclusive_handler(PWM_IRQ_WRAP, pwm_interrupt_handler); 
-  irq_set_enabled(PWM_IRQ_WRAP, true);
-
-  // Setup PWM for audio output
-  pwm_config config = pwm_get_default_config();
-  /* Base clock 176,000,000 Hz divide by wrap 250 then the clock divider further divides
-   * to set the interrupt rate. 
-   * 
-   * 11 KHz is fine for speech. Phone lines generally sample at 8 KHz
-   * 
-   * 
-   * So clkdiv should be as follows for given sample rate
-   *  8.0f for 11 KHz
-   *  4.0f for 22 KHz
-   *  2.0f for 44 KHz etc
-   */
-  pwm_config_set_clkdiv(&config, 8.0f); 
-  pwm_config_set_wrap(&config, 250); 
-  pwm_init(audio_pin_slice, &config, true);
-
-  pwm_set_gpio_level(AUDIO_PIN, 0);
+  gpio_init(BUTTEN_PIN);
+  gpio_set_dir(BUTTEN_PIN, GPIO_IN);
+  gpio_pull_up(BUTTEN_PIN)
+  bool button=gpio_get(BUTTEN_PIN)
+  set_sys_clock_khz(176000, true);
+  if (!button){
+    flash();
+  }
   board_init();
   tusb_init();
 
@@ -115,7 +77,6 @@ int main(void)
   {
     tud_task(); // tinyusb device task
     led_blinking_task();
-
     video_task();
   }
 
@@ -258,7 +219,75 @@ int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
   interval_ms = parameters->dwFrameInterval / 10000;
   return VIDEO_ERROR_NONE;
 }
+//--------------------------------------------------------------------+
+// FLASH TASK
+//--------------------------------------------------------------------+
+// We're going to erase and reprogram a region 256k from the start of flash.
+// Once done, we can access this at XIP_BASE + 256k.
+#define FLASH_TARGET_OFFSET (256 * 1024)
 
+const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
+
+void print_buf(const uint8_t *buf, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        printf("%02x", buf[i]);
+        if (i % 16 == 15)
+            printf("\n");
+        else
+            printf(" ");
+    }
+}
+void flash(void) {
+    const bool program = true; // enable programming (may resualt in data loss)
+    stdio_init_all();
+    gpio_init(LED2_PIN);
+    gpio_set_dir(LED2_PIN, GPIO_OUT);
+    gpio_put(LED2_PIN, 0);
+    sleep_ms(250);
+    gpio_put(LED2_PIN, 1);
+    if(program){
+      uint8_t data[FLASH_PAGE_SIZE] = "bitten2up, made by Scarlet: She/her"
+
+      printf("Generated random data:\n");
+      print_buf(data, FLASH_PAGE_SIZE);
+    // Note that a whole number of sectors must be erased at a time.
+      printf("\nErasing target region...\n");
+      flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
+      gpio_put(LED2_PIN, 0);
+      sleep_ms(250);
+      gpio_put(LED2_PIN, 1);
+      sleep_ms(250);
+      gpio_put(LED2_PIN, 0)
+      printf("Done. Read back target region:\n");
+      print_buf(flash_target_contents, FLASH_PAGE_SIZE);
+
+      printf("\nProgramming target region...\n");
+      flash_range_program(FLASH_TARGET_OFFSET,  data, FLASH_PAGE_SIZE);
+    
+      printf("Done. Read back target region:\n");
+      print_buf(flash_target_contents, FLASH_PAGE_SIZE);
+
+      bool mismatch = false;
+      for (int i = 0; i < FLASH_PAGE_SIZE; ++i) {
+          if (data[i] != flash_target_contents[i])
+              mismatch = true;
+      }
+      if (mismatch)
+          printf("Programming failed!\n");
+          while (1){
+            gpio_put(LED2_PIN, 0);
+            sleep_ms(10);
+            gpio_put(LED2_PIN, 1);
+          }
+      else
+          printf("Programming successful!\n");
+          while (1){
+            gpio_put(LED2_PIN, 0);
+            sleep_ms(1000);
+            gpio_put(LED2_PIN, 1);
+          }
+    }
+}
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
