@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
 add_executable(bittenpico)
-    # enable usb output, disable uart output
-    pico_enable_stdio_usb(bittenpico 1)
-    pico_enable_stdio_uart(bittenpico 0)
 target_sources(bittenpico PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/main.c
         ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
