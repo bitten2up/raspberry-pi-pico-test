@@ -278,6 +278,7 @@ void flash(void) {
             gpio_put(LED2_PIN, 0);
             sleep_ms(10);
             gpio_put(LED2_PIN, 1);
+            sleep_ms(10);
           }
       }
       else{
@@ -286,6 +287,7 @@ void flash(void) {
             gpio_put(LED2_PIN, 0);
             sleep_ms(1000);
             gpio_put(LED2_PIN, 1);
+            sleep_ms(1000);
           }
       }
     }
