@@ -272,20 +272,22 @@ void flash(void) {
           if (data[i] != flash_target_contents[i])
               mismatch = true;
       }
-      if (mismatch)
+      if (mismatch){
           printf("Programming failed!\n");
           while (1){
             gpio_put(LED2_PIN, 0);
             sleep_ms(10);
             gpio_put(LED2_PIN, 1);
           }
-      else
+      }
+      else{
           printf("Programming successful!\n");
           while (1){
             gpio_put(LED2_PIN, 0);
             sleep_ms(1000);
             gpio_put(LED2_PIN, 1);
           }
+      }
     }
 }
 //--------------------------------------------------------------------+
