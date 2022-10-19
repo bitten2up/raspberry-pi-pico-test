@@ -26,18 +26,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "pico/stdlib.h"   // stdlib 
-#include "hardware/flash.h"
+
 #include "bsp/board.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
-#include "pico/binary_info.h"
-const uint LED_PIN = 16;
-const uint LED2_PIN = 14;
-const uint BUTTEN_PIN = 15;
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
+
 /* Blink pattern
  * - 250 ms  : device not mounted
  * - 1000 ms : device mounted
@@ -53,31 +50,20 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
 void video_task(void);
-void flash(void);
 
 /*------------- MAIN -------------*/
 int main(void)
 {
-  
-  /* Overclocking for fun but then also so the system clock is a 
-   * multiple of typical audio sampling rates.
-   */
-  stdio_init_all();
-  gpio_init(BUTTEN_PIN);
-  gpio_set_dir(BUTTEN_PIN, GPIO_IN);
-  gpio_pull_up(BUTTEN_PIN);
-  bool button=gpio_get(BUTTEN_PIN);
-  set_sys_clock_khz(176000, true);
-  if (!button){
-    flash();
-  }
   board_init();
-  tusb_init();
+
+  // init device stack on configured roothub port
+  tud_init(BOARD_TUD_RHPORT);
 
   while (1)
   {
     tud_task(); // tinyusb device task
     led_blinking_task();
+
     video_task();
   }
 
@@ -126,6 +112,23 @@ static unsigned interval_ms = 1000 / FRAME_RATE;
 /* YUY2 frame buffer */
 #ifdef CFG_EXAMPLE_VIDEO_READONLY
 #include "images.h"
+
+# if !defined(CFG_EXAMPLE_VIDEO_DISABLE_MJPG)
+static struct {
+  uint32_t       size;
+  uint8_t const *buffer;
+} const frames[] = {
+  {color_bar_0_jpg_len, color_bar_0_jpg},
+  {color_bar_1_jpg_len, color_bar_1_jpg},
+  {color_bar_2_jpg_len, color_bar_2_jpg},
+  {color_bar_3_jpg_len, color_bar_3_jpg},
+  {color_bar_4_jpg_len, color_bar_4_jpg},
+  {color_bar_5_jpg_len, color_bar_5_jpg},
+  {color_bar_6_jpg_len, color_bar_6_jpg},
+  {color_bar_7_jpg_len, color_bar_7_jpg},
+};
+# endif
+
 #else
 static uint8_t frame_buffer[FRAME_WIDTH * FRAME_HEIGHT * 16 / 8];
 static void fill_color_bar(uint8_t *buffer, unsigned start_position)
@@ -134,14 +137,14 @@ static void fill_color_bar(uint8_t *buffer, unsigned start_position)
    * See also https://stackoverflow.com/questions/6939422 */
   static uint8_t const bar_color[8][4] = {
     /*  Y,   U,   Y,   V */
-    {  78, 214,  78, 230}, /* 100% White */
-    {  78, 214,  78, 230}, /* Yellow */
-    {  78, 214,  78, 230}, /* Cyan */
-    {  78, 214,  78, 230}, /* Green */
-    {  16, 190,  16, 280}, /* Magenta */
-    {  78, 214,  78, 230}, /* Red */
-    {  78, 214,  78, 230}, /* Blue */
-    {  78, 214,  78, 230}, /* Black */
+    { 235, 128, 235, 128}, /* 100% White */
+    { 219,  16, 219, 138}, /* Yellow */
+    { 188, 154, 188,  16}, /* Cyan */
+    { 173,  42, 173,  26}, /* Green */
+    {  78, 214,  78, 230}, /* Magenta */
+    {  63, 102,  63, 240}, /* Red */
+    {  32, 240,  32, 118}, /* Blue */
+    {  16, 128,  16, 128}, /* Black */
   };
   uint8_t *p;
 
@@ -182,8 +185,12 @@ void video_task(void)
     already_sent = 1;
     start_ms = board_millis();
 #ifdef CFG_EXAMPLE_VIDEO_READONLY
-    tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+# if defined(CFG_EXAMPLE_VIDEO_DISABLE_MJPG)
+    tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
                            FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+# else
+    tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t)frames[frame_num % 8].buffer, frames[frame_num % 8].size);
+# endif
 #else
     fill_color_bar(frame_buffer, frame_num);
     tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
@@ -196,8 +203,12 @@ void video_task(void)
   start_ms += interval_ms;
 
 #ifdef CFG_EXAMPLE_VIDEO_READONLY
-  tud_video_n_frame_xfer(0, 0, (void*)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
+# if defined(CFG_EXAMPLE_VIDEO_DISABLE_MJPG)
+  tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t)&frame_buffer[(frame_num % (FRAME_WIDTH / 2)) * 4],
                          FRAME_WIDTH * FRAME_HEIGHT * 16/8);
+# else
+  tud_video_n_frame_xfer(0, 0, (void*)(uintptr_t)frames[frame_num % 8].buffer, frames[frame_num % 8].size);
+# endif
 #else
   fill_color_bar(frame_buffer, frame_num);
   tud_video_n_frame_xfer(0, 0, (void*)frame_buffer, FRAME_WIDTH * FRAME_HEIGHT * 16/8);
@@ -220,82 +231,7 @@ int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
   interval_ms = parameters->dwFrameInterval / 10000;
   return VIDEO_ERROR_NONE;
 }
-//--------------------------------------------------------------------+
-// FLASH TASK
-//--------------------------------------------------------------------+
-// We're going to erase and reprogram a region 256k from the start of flash.
-// Once done, we can access this at XIP_BASE + 256k.
-#define FLASH_TARGET_OFFSET (256 * 1024)
 
-const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
-
-void print_buf(const uint8_t *buf, size_t len) {
-    for (size_t i = 0; i < len; ++i) {
-        printf("%02x", buf[i]);
-        if (i % 16 == 15)
-            printf("\n");
-        else
-            printf(" ");
-    }
-}
-void flash(void) {
-    const bool program = true; // enable programming (may resualt in data loss)
-    stdio_init_all();
-    gpio_init(LED2_PIN);
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
-    gpio_put(LED_PIN, 1);
-    gpio_set_dir(LED2_PIN, GPIO_OUT);
-    gpio_put(LED2_PIN, 0);
-    sleep_ms(250);
-    gpio_put(LED2_PIN, 1);
-    if(program){
-      uint8_t data[FLASH_PAGE_SIZE] = "bitten2up, made by Scarlet: She/her";
-
-      printf("Generated random data:\n");
-      print_buf(data, FLASH_PAGE_SIZE);
-    // Note that a whole number of sectors must be erased at a time.
-      printf("\nErasing target region...\n");
-      flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
-      gpio_put(LED2_PIN, 0);
-      sleep_ms(250);
-      gpio_put(LED2_PIN, 1);
-      sleep_ms(250);
-      gpio_put(LED2_PIN, 0);
-      printf("Done. Read back target region:\n");
-      print_buf(flash_target_contents, FLASH_PAGE_SIZE);
-
-      printf("\nProgramming target region...\n");
-      flash_range_program(FLASH_TARGET_OFFSET,  data, FLASH_PAGE_SIZE);
-    
-      printf("Done. Read back target region:\n");
-      print_buf(flash_target_contents, FLASH_PAGE_SIZE);
-
-      bool mismatch = false;
-      for (int i = 0; i < FLASH_PAGE_SIZE; ++i) {
-          if (data[i] != flash_target_contents[i])
-              mismatch = true;
-      }
-      if (mismatch){
-          printf("Programming failed!\n");
-          while (1){
-            gpio_put(LED2_PIN, 0);
-            sleep_ms(10);
-            gpio_put(LED2_PIN, 1);
-            sleep_ms(10);
-          }
-      }
-      else{
-          printf("Programming successful!\n");
-          while (1){
-            gpio_put(LED2_PIN, 0);
-            sleep_ms(1000);
-            gpio_put(LED2_PIN, 1);
-            sleep_ms(1000);
-          }
-      }
-    }
-}
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
